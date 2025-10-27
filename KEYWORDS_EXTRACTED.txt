@@ -1,0 +1,84 @@
+================================================================================
+KEYWORD EXTRACTION RESULTS
+================================================================================
+Date: 2025-10-27
+Source: Cursor Agent Thread
+Project: Ignite Knowledge - Team Knowledge Base
+================================================================================
+
+📊 MAIN TOPICS/KEYWORDS (15 extracted):
+--------------------------------------------------------------------------------
+1. Keyword Extraction
+2. Knowledge Base Management
+3. Supabase Integration
+4. Database Schema
+5. Backend Development
+6. Frontend Development
+7. Python Scripting
+8. Data Analysis
+9. Next.js
+10. FastAPI
+11. TypeScript
+12. Authentication
+13. Row Level Security
+14. API Development
+15. Full-Stack Development
+
+🎯 KEY ARCHITECTURAL DECISIONS (10):
+--------------------------------------------------------------------------------
+1. Use Next.js 14.2.5 for frontend framework
+2. Use FastAPI for backend API
+3. Use Supabase for authentication and database
+4. Use styled-components for UI theming
+5. Implement RLS policies for security
+6. Support CSV and PDF export functionality
+7. Use Poetry for Python dependency management
+8. Implement row-level security for data protection
+9. Use TypeScript for type safety
+10. Deploy on production-ready infrastructure
+
+❓ FREQUENTLY ASKED QUESTIONS (8):
+--------------------------------------------------------------------------------
+1. What database is used?
+   → PostgreSQL via Supabase with knowledge_items, user_favorites, activity_log
+
+2. What are the main tables?
+   → knowledge_items (articles), user_favorites (bookmarks), activity_log (tracking)
+
+3. How is authentication handled?
+   → Supabase Auth with row-level security (RLS) policies
+
+4. What export formats are supported?
+   → CSV (built-in) and PDF (via WeasyPrint)
+
+5. What ports do services run on?
+   → Frontend: 3000, Backend: 8080
+
+6. What is the tech stack?
+   → Next.js + TypeScript (frontend), FastAPI + Python (backend), Supabase PostgreSQL (database)
+
+7. How to extract keywords?
+   → Analyze README files and conversation context to identify topics, decisions, FAQs
+
+8. What is the project structure?
+   → frontend/ (Next.js), backend/ (FastAPI), supabase/ (SQL schemas)
+
+================================================================================
+EXECUTION INSTRUCTIONS
+================================================================================
+
+To insert this data into Supabase knowledge_items table:
+
+✅ RECOMMENDED METHOD: Supabase Dashboard SQL Editor
+1. Go to: https://wwmqodqqqrffxdvgisrd.supabase.co
+2. Navigate to: SQL Editor
+3. Copy content from: supabase/insert_keyword_knowledge.sql
+4. Paste and click "Run"
+
+📄 FILES CREATED:
+- supabase/insert_keyword_knowledge.sql (SQL script - READY TO RUN)
+- KEYWORD_EXTRACTION_SUMMARY.md (Detailed summary)
+- frontend/scripts/update-knowledge-base.ts (TypeScript alternative)
+- KEYWORDS_EXTRACTED.txt (This file - Quick reference)
+
+================================================================================
