@@ -6,11 +6,11 @@ import { useEffect, useState } from 'react';
 const Bar = styled.nav`
   position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px);
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 12px 16px; border-bottom: 1px solid ${(p) => p.theme.colors.border}; background: ${(p) => p.theme.colors.cardBg};
+  padding: 12px 16px; border-bottom: 1px solid #D7E2EE; background: rgba(255,255,255,0.85);
 `;
-const Brand = styled.div` font-weight: 700; color: ${(p) => p.theme.colors.primary}; `;
+const Brand = styled.div` font-weight: 700; color: #1D74F5; `;
 const Row = styled.div` display: flex; gap: 12px; align-items: center; `;
-const Btn = styled.button` padding: 8px 12px; border-radius: 10px; border: 1px solid ${(p) => p.theme.colors.border}; background: ${(p) => p.theme.colors.surface}; color: ${(p) => p.theme.colors.text}; cursor: pointer; `;
+const Btn = styled.button` padding: 8px 12px; border-radius: 10px; border: 1px solid #D7E2EE; background: #ffffff; color: #0F2A43; cursor: pointer; `;
 
 export function Nav() {
   const [email, setEmail] = useState<string | null>(null);

@@ -7,7 +7,7 @@ const GlobalStyle = createGlobalStyle`
   :root { color-scheme: light dark; }
   *, *::before, *::after { box-sizing: border-box; }
   html, body, #__next { height: 100%; }
-  body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; background: ${(p) => p.theme.colors.background}; color: ${(p) => p.theme.colors.text}; }
+  body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; background: linear-gradient(180deg, #E6F4F1 0%, #EAF3FF 100%); color: #0F2A43; }
   a { color: inherit; text-decoration: none; }
 `;
 
