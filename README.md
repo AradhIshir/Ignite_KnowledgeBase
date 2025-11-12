@@ -4,6 +4,20 @@ A modern, full-stack knowledge management application built with Next.js, FastAP
 
 ## 🚀 Current Application Status
 
+
+## Keywords
+
+- UI issues
+- Dashboard
+- Mia Chatbot
+- Recommendations
+- order history
+- Pending Approvals
+- Recommendations
+- catalog
+- Cart
+
+
 ### ✅ **Fully Functional Features**
 - **Authentication System**: Working Supabase Auth with signup/signin
 - **Modern Dashboard**: KnowledgeHub-style interface with summary cards

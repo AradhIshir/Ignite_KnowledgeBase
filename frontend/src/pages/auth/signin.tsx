@@ -34,6 +34,31 @@ const Button = styled.button`
 `;
 const Hint = styled.div` font-size: 14px; color: ${(p) => p.theme.colors.muted}; `;
 const ErrorMsg = styled.div` color: #D92D20; font-size: 14px; `;
+const StyledLink = styled(Link)`
+  color: #1D74F5;
+  text-decoration: none;
+  font-weight: 500;
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+const LinkButton = styled.button`
+  width: 100%; 
+  padding: 12px 16px; 
+  border-radius: ${(p) => p.theme.radii.lg}; 
+  background: #1D74F5; 
+  color: white; 
+  border: none; 
+  cursor: pointer;
+  font-weight: 500;
+  &:hover {
+    background: #1565D8;
+  }
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+`;
 
 export default function SignIn() {
   const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({ resolver: zodResolver(schema) });
@@ -42,9 +67,25 @@ export default function SignIn() {
 
   const onSubmit = async (data: FormValues) => {
     setSubmitting(true); setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+    const { data: authData, error } = await supabase.auth.signInWithPassword({ 
+      email: data.email, 
+      password: data.password 
+    });
     setSubmitting(false);
-    if (error) { setError(error.message); return; }
+    if (error) {
+      // Check if the error is due to unconfirmed email
+      if (error.message.includes('Email not confirmed') || error.message.includes('email_not_confirmed')) {
+        setError('Please confirm your email address before signing in. Check your inbox for the confirmation link.');
+      } else {
+        setError(error.message);
+      }
+      return;
+    }
+    // Check if email is confirmed
+    if (authData.user && !authData.user.email_confirmed_at) {
+      setError('Please confirm your email address before signing in. Check your inbox for the confirmation link.');
+      return;
+    }
     window.location.href = '/app/dashboard';
   };
 
@@ -64,13 +105,13 @@ export default function SignIn() {
             {errors.password && <ErrorMsg>{errors.password.message}</ErrorMsg>}
           </Field>
           {error && <ErrorMsg>{error}</ErrorMsg>}
-          <Button disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</Button>
+          <LinkButton disabled={submitting} type="submit">{submitting ? 'Signing in…' : 'Sign in'}</LinkButton>
         </form>
         <Hint style={{ marginTop: 12 }}>
-          <Link href="/auth/forgot">Forgot password?</Link>
+          <StyledLink href="/auth/forgot">Forgot password?</StyledLink>
         </Hint>
         <Hint style={{ marginTop: 8 }}>
-          No account? <Link href="/auth/signup">Create one</Link>
+          No account? <StyledLink href="/auth/signup">Create one</StyledLink>
         </Hint>
       </Card>
     </Wrapper>

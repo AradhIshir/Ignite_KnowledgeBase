@@ -26,3 +26,37 @@ pnpm dev
 - Uses styled-components with blue/green theme and theme switcher.
 - Auth via Supabase. Update roles using `user_metadata.role` (e.g., `admin`).
 
+## 🚩 Important Keywords
+
+- UI issues
+- Dashboard
+- Mia Chatbot
+- Recommendations
+-Pending approval
+- order history
+- Manage Orders
+- catalog
+- Cart
+- Practice
+- Edit
+- Responsiveness
+- Mobile
+- Admin
+- User
+- SuperAdmin
+- Mia
+- Orders
+- Delivered
+- Shipped
+- error
+- Practice Admin
+- Practice User
+
+
+
+> Use these keywords in your pull requests, commit messages, and GitHub issues to help the team quickly identify areas of focus and to streamline collaboration.
+>
+> For UI-related problems, tag with `UI issues`.  
+> For anything affecting analytics or navigation, use `Dashboard`.  
+> If you're working on or reporting enhancements to the conversational assistant, use `Mia Chatbot`.  
+> For feature ideas or feedback, tag with `Recommendations`.

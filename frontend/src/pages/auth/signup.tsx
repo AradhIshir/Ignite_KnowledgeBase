@@ -8,8 +8,12 @@ import Link from 'next/link';
 
 const schema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
-  fullName: z.string().min(2)
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  confirmPassword: z.string().min(6, 'Password must be at least 6 characters'),
+  fullName: z.string().min(2, 'Full name must be at least 2 characters')
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -25,7 +29,25 @@ const Input = styled.input`
 `;
 const Button = styled.button` width: 100%; padding: 12px 16px; border-radius: ${(p) => p.theme.radii.lg}; background: ${(p) => p.theme.colors.secondary}; color: white; border: none; cursor: pointer; `;
 const Hint = styled.div` font-size: 14px; color: ${(p) => p.theme.colors.muted}; `;
-const ErrorMsg = styled.div` color: #D92D20; font-size: 14px; `;
+const ErrorMsg = styled.div` color: #D92D20; font-size: 14px; margin-bottom: 8px; `;
+const SuccessMsg = styled.div`
+  color: #059669;
+  font-size: 14px;
+  background: #D1FAE5;
+  border: 1px solid #10B981;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-weight: 500;
+`;
+const StyledLink = styled(Link)`
+  color: #1D74F5;
+  text-decoration: none;
+  font-weight: 500;
+  &:hover {
+    text-decoration: underline;
+  }
+`;
 
 export default function SignUp() {
   const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({ resolver: zodResolver(schema) });
@@ -42,7 +64,7 @@ export default function SignUp() {
     });
     setSubmitting(false);
     if (error) { setError(error.message); return; }
-    setInfo('Check your email to confirm your account.');
+    setInfo('Your account is created successfully, confirm in the email.');
   };
 
   return (
@@ -65,12 +87,17 @@ export default function SignUp() {
             <Input placeholder="••••••••" type="password" {...register('password')} />
             {errors.password && <ErrorMsg>{errors.password.message}</ErrorMsg>}
           </Field>
+          <Field>
+            <label>Confirm Password</label>
+            <Input placeholder="••••••••" type="password" {...register('confirmPassword')} />
+            {errors.confirmPassword && <ErrorMsg>{errors.confirmPassword.message}</ErrorMsg>}
+          </Field>
           {error && <ErrorMsg>{error}</ErrorMsg>}
-          {info && <div style={{ color: '#1D74F5' }}>{info}</div>}
+          {info && <SuccessMsg>{info}</SuccessMsg>}
           <Button disabled={submitting}>{submitting ? 'Creating…' : 'Create account'}</Button>
         </form>
         <Hint style={{ marginTop: 12 }}>
-          Already have an account? <Link href="/auth/signin">Sign in</Link>
+          Already have an account? <StyledLink href="/auth/signin">Sign in</StyledLink>
         </Hint>
       </Card>
     </Wrapper>

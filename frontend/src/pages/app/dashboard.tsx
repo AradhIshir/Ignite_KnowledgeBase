@@ -4,6 +4,47 @@ import { supabase } from '../../lib/supabaseClient';
 import Link from 'next/link';
 import MainMenu from '../../components/MainMenu';
 
+// Decode HTML entities
+const decodeHtmlEntities = (text: string): string => {
+  if (!text) return '';
+  if (typeof window === 'undefined') {
+    // Server-side: decode common entities
+    const entityMap: { [key: string]: string } = {
+      '&amp;': '&',
+      '&lt;': '<',
+      '&gt;': '>',
+      '&quot;': '"',
+      '&#39;': "'",
+      '&apos;': "'",
+      '&nbsp;': ' ',
+      '&middot;': '·',
+      '&copy;': '©',
+      '&reg;': '®',
+      '&trade;': '™',
+      '&hellip;': '…',
+      '&mdash;': '—',
+      '&ndash;': '–',
+    };
+    let decoded = text;
+    for (const [entity, char] of Object.entries(entityMap)) {
+      decoded = decoded.replace(new RegExp(entity, 'g'), char);
+    }
+    decoded = decoded.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(parseInt(dec, 10)));
+    decoded = decoded.replace(/&#x([a-f\d]+);/gi, (match, hex) => String.fromCharCode(parseInt(hex, 16)));
+    return decoded;
+  } else {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = text;
+    return textarea.value;
+  }
+};
+
+// Strip HTML tags for preview
+const stripHtmlTags = (html: string): string => {
+  if (!html) return '';
+  return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+};
+
 // Header Components
 const Header = styled.header`
   background: white;
@@ -314,6 +355,10 @@ const ItemDescription = styled.p`
   font-size: 14px;
   margin: 0 0 16px 0;
   line-height: 1.5;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+  max-width: 100%;
 `;
 
 const ItemMetadata = styled.div`
@@ -505,10 +550,38 @@ export default function Dashboard() {
         </SearchSection>
 
         <ItemsGrid>
-          {filteredItems.map((item) => (
+          {filteredItems.map((item) => {
+            // Generate title: "Keyword" only for Slack, actual title for Confluence
+            const getCardTitle = () => {
+              if (item.source === 'confluence') {
+                // For Confluence, the summary field contains the actual page title
+                return decodeHtmlEntities(item.summary || 'Confluence Article');
+              }
+              if (item.topics && item.topics.length > 0) {
+                const keyword = item.topics[0];
+                const keywordTitle = keyword.split(' ').map(word => 
+                  word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                ).join(' ');
+                return keywordTitle;
+              }
+              return item.summary || 'Article';
+            };
+
+            // Get clean preview text (decode HTML entities and strip HTML for Confluence)
+            const getPreviewText = () => {
+              if (item.source === 'confluence' && item.raw_text) {
+                // For Confluence, extract text from HTML
+                const text = stripHtmlTags(item.raw_text);
+                return decodeHtmlEntities(text).substring(0, 150) + (text.length > 150 ? '...' : '');
+              }
+              const summary = item.summary || item.raw_text?.substring(0, 100) || 'No description available';
+              return decodeHtmlEntities(summary);
+            };
+
+            return (
             <ItemCard key={item.id}>
-              <ItemTitle>{item.summary}</ItemTitle>
-              <ItemDescription>{item.raw_text?.substring(0, 100)}...</ItemDescription>
+              <ItemTitle>{getCardTitle()}</ItemTitle>
+              <ItemDescription>{getPreviewText()}</ItemDescription>
               <ItemMetadata>
                 <MetadataItem>
                   📄 {item.project || 'FS'}
@@ -517,14 +590,15 @@ export default function Dashboard() {
                   📅 {new Date(item.created_at).toLocaleDateString()}
                 </MetadataItem>
                 <MetadataItem>
-                  👤 {item.source || 'slack'}
+                  {item.source === 'confluence' ? '📄' : item.source === 'slack' ? '💬' : '📄'} {item.source || 'slack'}
                 </MetadataItem>
               </ItemMetadata>
               <ViewDetailsButton as={Link} href={`/app/items/${item.id}`}>
                 👁️ View Details
               </ViewDetailsButton>
             </ItemCard>
-          ))}
+            );
+          })}
         </ItemsGrid>
       </Container>
     </>

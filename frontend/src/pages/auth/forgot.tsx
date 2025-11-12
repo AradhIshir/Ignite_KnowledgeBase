@@ -20,7 +20,25 @@ const Input = styled.input`
 `;
 const Button = styled.button` width: 100%; padding: 12px 16px; border-radius: ${(p) => p.theme.radii.lg}; background: ${(p) => p.theme.colors.primary}; color: white; border: none; cursor: pointer; `;
 const Hint = styled.div` font-size: 14px; color: ${(p) => p.theme.colors.muted}; `;
-const ErrorMsg = styled.div` color: #D92D20; font-size: 14px; `;
+const ErrorMsg = styled.div` color: #D92D20; font-size: 14px; margin-bottom: 8px; `;
+const SuccessMsg = styled.div`
+  color: #059669;
+  font-size: 14px;
+  background: #D1FAE5;
+  border: 1px solid #10B981;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-weight: 500;
+`;
+const StyledLink = styled(Link)`
+  color: #1D74F5;
+  text-decoration: none;
+  font-weight: 500;
+  &:hover {
+    text-decoration: underline;
+  }
+`;
 
 export default function Forgot() {
   const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({ resolver: zodResolver(schema) });
@@ -49,11 +67,11 @@ export default function Forgot() {
             {errors.email && <ErrorMsg>{errors.email.message}</ErrorMsg>}
           </Field>
           {error && <ErrorMsg>{error}</ErrorMsg>}
-          {info && <div style={{ color: '#1D74F5' }}>{info}</div>}
+          {info && <SuccessMsg>{info}</SuccessMsg>}
           <Button disabled={submitting}>{submitting ? 'Sending…' : 'Send reset link'}</Button>
         </form>
         <Hint style={{ marginTop: 12 }}>
-          <Link href="/auth/signin">Back to sign in</Link>
+          <StyledLink href="/auth/signin">Back to sign in</StyledLink>
         </Hint>
       </Card>
     </Wrapper>

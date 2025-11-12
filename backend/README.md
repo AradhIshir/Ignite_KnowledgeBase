@@ -15,3 +15,13 @@ poetry run uvicorn app.main:app --reload --port 8080
 ## Notes
 - PDF generation via WeasyPrint, CSV built-in.
 
+## Backend Keywords
+
+- authentication
+- REST API
+- Dental city webhook
+- Mia chat API
+
+
+
+
