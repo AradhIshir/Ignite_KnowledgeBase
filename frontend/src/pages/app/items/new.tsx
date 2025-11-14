@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import styled from 'styled-components';
 import { supabase } from '../../../lib/supabaseClient';
 import Link from 'next/link';
 import MainMenu from '../../../components/MainMenu';
+import { canCreateArticles } from '../../../lib/roles';
 
 const Container = styled.div`
   max-width: 800px;
@@ -230,6 +231,19 @@ export default function NewArticle() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    checkPermission();
+  }, []);
+
+  const checkPermission = async () => {
+    const canCreate = await canCreateArticles();
+    setHasPermission(canCreate);
+    if (!canCreate) {
+      setError('Only Admins and Project Leads can create articles.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -263,7 +277,26 @@ export default function NewArticle() {
         router.push('/app/dashboard');
       }, 1500);
     } catch (err: any) {
-      setError(err.message || 'Failed to create article');
+      let errorMessage = 'Failed to create article. Please try again.';
+      
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.error) {
+        errorMessage = err.error;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      }
+      
+      // Provide more specific error messages
+      if (errorMessage.includes('permission') || errorMessage.includes('role')) {
+        errorMessage = 'You do not have permission to create articles. Only Admins and Project Leads can create articles.';
+      } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      } else if (errorMessage.includes('authentication') || errorMessage.includes('login')) {
+        errorMessage = 'You must be logged in to create articles. Please log in and try again.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -275,6 +308,26 @@ export default function NewArticle() {
       [e.target.name]: e.target.value
     });
   };
+
+  if (hasPermission === false) {
+    return (
+      <>
+        <MainMenu />
+        <Container>
+          <Header>
+            <HeaderLeft>
+              <BackButton href="/app/dashboard">← Back to Dashboard</BackButton>
+              <div>
+                <Title>Access Denied</Title>
+                <Subtitle>Only Admins and Project Leads can create articles.</Subtitle>
+              </div>
+            </HeaderLeft>
+          </Header>
+          {error && <ErrorMessage>{error}</ErrorMessage>}
+        </Container>
+      </>
+    );
+  }
 
   return (
     <>

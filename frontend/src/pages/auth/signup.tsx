@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { supabase } from '../../lib/supabaseClient';
+import { signUp } from '../../lib/api';
 import Link from 'next/link';
 
 const schema = z.object({
@@ -57,14 +58,37 @@ export default function SignUp() {
 
   const onSubmit = async (data: FormValues) => {
     setSubmitting(true); setError(null); setInfo(null);
-    const { error } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password,
-      options: { data: { full_name: data.fullName } }
-    });
-    setSubmitting(false);
-    if (error) { setError(error.message); return; }
-    setInfo('Your account is created successfully, confirm in the email.');
+    
+    try {
+      // Create account via backend API (email already confirmed, no confirmation needed)
+      await signUp({
+        email: data.email,
+        password: data.password,
+        full_name: data.fullName,
+      });
+      
+      // Account created successfully - now sign them in automatically
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
+      
+      setSubmitting(false);
+      
+      if (signInError) {
+        setError('Account created but sign in failed. Please try signing in manually.');
+        return;
+      }
+      
+      // Success! Account created and user is signed in
+      setInfo('Your account has been created successfully! Redirecting...');
+      setTimeout(() => {
+        window.location.href = '/app/dashboard';
+      }, 1500);
+    } catch (err: any) {
+      setSubmitting(false);
+      setError(err.message || 'Failed to create account. Please try again.');
+    }
   };
 
   return (

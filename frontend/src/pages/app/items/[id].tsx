@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import { supabase } from '../../../lib/supabaseClient';
 import Link from 'next/link';
 import MainMenu from '../../../components/MainMenu';
+import Comments from '../../../components/Comments';
 
 const Container = styled.div`
   max-width: 800px;
@@ -694,6 +695,10 @@ export default function ArticleDetails() {
           </Section>
         )}
       </ArticleCard>
+
+      {article && article.id && (
+        <Comments articleId={article.id} />
+      )}
     </Container>
     </>
   );

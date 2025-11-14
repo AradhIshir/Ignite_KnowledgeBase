@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { supabase } from '../lib/supabaseClient';
+import { canCreateArticles, isAdmin, getUserRole } from '../lib/roles';
 
 const MenuContainer = styled.div`
   background: white;
@@ -99,8 +102,52 @@ const UserName = styled.span`
   font-weight: 500;
 `;
 
+const LogoutButton = styled.button`
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  
+  &:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+  }
+  
+  &:active {
+    background: #e5e7eb;
+  }
+`;
+
 export default function MainMenu() {
   const router = useRouter();
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [canCreate, setCanCreate] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  const [userName, setUserName] = useState('User');
+
+  useEffect(() => {
+    loadUserInfo();
+  }, []);
+
+  const loadUserInfo = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const role = await getUserRole();
+        setUserRole(role);
+        setCanCreate(await canCreateArticles());
+        setIsAdminUser(await isAdmin());
+        setUserName(user.user_metadata?.full_name || user.email?.split('@')[0] || 'User');
+      }
+    } catch (error) {
+      console.error('Error loading user info:', error);
+    }
+  };
 
   const isActive = (path: string) => {
     if (path === '/app/dashboard') {
@@ -110,6 +157,15 @@ export default function MainMenu() {
       return router.pathname.startsWith('/app/items');
     }
     return router.pathname === path;
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      router.push('/auth/signin');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   return (
@@ -132,14 +188,22 @@ export default function MainMenu() {
         <NavLink href="/app/items" $active={isActive('/app/items')}>
           📖 Knowledge Items
         </NavLink>
-        <NavLink href="/app/items/new" $active={false}>
-          ➕ Add Article
-        </NavLink>
+        {canCreate && (
+          <NavLink href="/app/items/new" $active={false}>
+            ➕ Add Article
+          </NavLink>
+        )}
+        {isAdminUser && (
+          <NavLink href="/app/admin" $active={router.pathname === '/app/admin'}>
+            ⚙️ Admin
+          </NavLink>
+        )}
       </Nav>
 
       <UserProfile>
-        <UserAvatar>A</UserAvatar>
-        <UserName>aradhana goyal</UserName>
+        <UserAvatar>{userName.charAt(0).toUpperCase()}</UserAvatar>
+        <UserName>{userName}</UserName>
+        <LogoutButton onClick={handleLogout}>Logout</LogoutButton>
       </UserProfile>
     </MenuContainer>
   );

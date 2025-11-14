@@ -67,25 +67,16 @@ export default function SignIn() {
 
   const onSubmit = async (data: FormValues) => {
     setSubmitting(true); setError(null);
-    const { data: authData, error } = await supabase.auth.signInWithPassword({ 
+    const { error } = await supabase.auth.signInWithPassword({ 
       email: data.email, 
       password: data.password 
     });
     setSubmitting(false);
     if (error) {
-      // Check if the error is due to unconfirmed email
-      if (error.message.includes('Email not confirmed') || error.message.includes('email_not_confirmed')) {
-        setError('Please confirm your email address before signing in. Check your inbox for the confirmation link.');
-      } else {
-        setError(error.message);
-      }
+      setError(error.message);
       return;
     }
-    // Check if email is confirmed
-    if (authData.user && !authData.user.email_confirmed_at) {
-      setError('Please confirm your email address before signing in. Check your inbox for the confirmation link.');
-      return;
-    }
+    // Sign in successful - redirect to dashboard
     window.location.href = '/app/dashboard';
   };
 
