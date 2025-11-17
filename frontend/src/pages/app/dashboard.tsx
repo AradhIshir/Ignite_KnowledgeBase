@@ -554,8 +554,43 @@ export default function Dashboard() {
             // Generate title: "Keyword" only for Slack, actual title for Confluence
             const getCardTitle = () => {
               if (item.source === 'confluence') {
-                // For Confluence, the summary field contains the actual page title
-                return decodeHtmlEntities(item.summary || 'Confluence Article');
+                // For Confluence, extract title from raw_text metadata
+                const rawText = item.raw_text || '';
+                if (rawText) {
+                  const lines = rawText.split('\n');
+                  for (const line of lines.slice(0, 10)) {
+                    if (line.trim().startsWith('CONFLUENCE_PAGE_TITLE:')) {
+                      const title = line.replace(/^CONFLUENCE_PAGE_TITLE:\s*/, '').trim();
+                      if (title) {
+                        return decodeHtmlEntities(title);
+                      }
+                    }
+                  }
+                  // Fallback: try to extract from URL
+                  if (rawText.startsWith('URL:')) {
+                    const urlLine = rawText.split('\n')[0];
+                    const url = urlLine.replace(/^URL:\s*/, '').trim();
+                    if (url) {
+                      const urlParts = url.split('/');
+                      const lastPart = urlParts[urlParts.length - 1];
+                      if (lastPart && lastPart !== 'pages') {
+                        // Decode URL-encoded characters properly
+                        try {
+                          const decoded = decodeURIComponent(lastPart);
+                          const cleaned = decoded.replace(/\+/g, ' ').replace(/-/g, ' ').trim();
+                          return decodeHtmlEntities(cleaned);
+                        } catch (e) {
+                          return decodeHtmlEntities(lastPart.replace(/\+/g, ' ').replace(/-/g, ' '));
+                        }
+                      }
+                    }
+                  }
+                }
+                // Last fallback: use summary if it's not AI-generated
+                if (item.summary && !item.summary.includes('## Summary')) {
+                  return decodeHtmlEntities(item.summary);
+                }
+                return 'Confluence Article';
               }
               if (item.topics && item.topics.length > 0) {
                 const keyword = item.topics[0];

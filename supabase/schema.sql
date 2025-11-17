@@ -7,6 +7,8 @@ create table if not exists public.knowledge_items (
   summary text not null,
   topics text[] null,
   decisions text[] null,
+  key_points text[] null,
+  action_items text[] null,
   faqs text[] null,
   source text null,
   date text null,

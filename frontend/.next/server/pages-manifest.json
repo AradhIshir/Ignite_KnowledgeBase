@@ -2,5 +2,7 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/app/dashboard": "pages/app/dashboard.js"
+  "/app/ai-assistant": "pages/app/ai-assistant.js",
+  "/app/dashboard": "pages/app/dashboard.js",
+  "/app/items/[id]": "pages/app/items/[id].js"
 }

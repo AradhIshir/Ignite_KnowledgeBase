@@ -1,57 +1,42 @@
+"""FastAPI application main entry point."""
+import os
+import logging
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
-import os
-import orjson
-from io import BytesIO
-from reportlab.lib.pagesizes import LETTER
-from reportlab.pdfgen import canvas
 from fastapi.responses import RedirectResponse
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+logger = logging.getLogger(__name__)
 
+from app.models import (
+    ExportRequest,
+    CreateUserRequest,
+    SignUpRequest,
+    UpdateUserRoleRequest,
+    AIQuestionRequest
+)
+from app.services.export_service import to_csv, to_pdf
+from app.services.user_service import UserService
+from app.services.ai_service import process_ai_question
+from app.auth import verify_admin
 
-class ExportRequest(BaseModel):
-    filename: str
-    format: str  # 'pdf' or 'csv'
-    items: list[dict]
+# Load environment variables (try both backend/.env and root .env)
+load_dotenv()  # Load from current directory (backend/.env)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))  # Also try root .env
 
+# Verify OpenAI API key is loaded
+openai_key = os.getenv('OPENAI_API_KEY')
+if openai_key:
+    logger.info(f"OpenAI API key loaded: {openai_key[:20]}...")
+else:
+    logger.warning("WARNING: OPENAI_API_KEY not found in environment variables!")
 
-class CreateUserRequest(BaseModel):
-    email: EmailStr
-    password: str
-    full_name: str
-    role: str  # 'admin', 'project_lead', or 'team_member'
-
-
-class SignUpRequest(BaseModel):
-    email: EmailStr
-    password: str
-    full_name: str
-
-
-class UpdateUserRoleRequest(BaseModel):
-    role: str  # 'admin', 'project_lead', or 'team_member'
-
-
-def to_csv(rows: list[dict]) -> str:
-    if not rows:
-        return ""
-    headers = list(rows[0].keys())
-    out = [",".join([str(h) for h in headers])]
-    for row in rows:
-        out.append(
-            ",".join([str(row.get(h, "")).replace("\n", " ").replace(",", ";") for h in headers])
-        )
-    return "\n".join(out)
-
-
+# Initialize FastAPI app
 app = FastAPI(title="Ignite Knowledge Backend")
 
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -65,152 +50,130 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    print("WARNING: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set. User management endpoints will not work.")
+    print(
+        "WARNING: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set. "
+        "User management endpoints will not work."
+    )
 
 supabase_admin: Optional[Client] = None
 if SUPABASE_URL and SUPABASE_SERVICE_KEY:
     supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
+# Initialize services
+user_service = UserService(supabase_admin) if supabase_admin else None
 
-async def verify_admin(authorization: Optional[str] = Header(None)):
-    """Verify that the user is an admin"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-    
-    token = authorization.replace("Bearer ", "")
-    
-    # Verify token and check role using admin client (can verify any user's token)
+
+# Dependency to get user service
+def get_user_service() -> UserService:
+    """Get user service instance."""
+    if not user_service:
+        raise HTTPException(
+            status_code=500,
+            detail="User service not configured"
+        )
+    return user_service
+
+
+# Dependency to get supabase admin client
+def get_supabase_admin() -> Client:
+    """Get Supabase admin client."""
     if not supabase_admin:
-        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
-    
-    try:
-        # Use admin client to get user from token
-        user_response = supabase_admin.auth.get_user(token)
-        if not user_response.user:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        
-        role = user_response.user.user_metadata.get("role")
-        if role != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required")
-        
-        return user_response.user
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase admin client not configured"
+        )
+    return supabase_admin
 
+
+# ============================================================================
+# Health and Root Endpoints
+# ============================================================================
 
 @app.get("/")
 def root():
-    # Redirect to interactive docs for convenience
+    """Redirect to interactive API documentation."""
     return RedirectResponse(url="/docs")
 
 
 @app.get("/health")
 def health():
+    """Health check endpoint."""
     return {"ok": True}
 
 
-@app.post("/export")
-def export_items(req: ExportRequest):
-    if req.format not in {"pdf", "csv"}:
-        raise HTTPException(status_code=400, detail="Unsupported format")
+# ============================================================================
+# Export Endpoints
+# ============================================================================
 
-    if req.format == "csv":
-        csv_body = to_csv(req.items)
+@app.post("/export")
+def export_items(request: ExportRequest):
+    """
+    Export knowledge items to CSV or PDF format.
+    
+    Args:
+        request: Export request with items and format
+        
+    Returns:
+        Export file data with filename and MIME type
+    """
+    if request.format not in {"pdf", "csv"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported format. Must be 'pdf' or 'csv'"
+        )
+    
+    if request.format == "csv":
+        csv_body = to_csv(request.items)
+        filename = (
+            request.filename
+            if request.filename.endswith(".csv")
+            else f"{request.filename}.csv"
+        )
         return {
-            "filename": req.filename if req.filename.endswith(".csv") else f"{req.filename}.csv",
+            "filename": filename,
             "mime": "text/csv",
             "body": csv_body,
         }
-
-    # PDF render via ReportLab (no system deps)
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=LETTER)
-    width, height = LETTER
-
-    def write_line(text: str, x: float, y: float, font_size: int = 11):
-        c.setFont("Helvetica", font_size)
-        c.drawString(x, y, text)
-        return y
-
-    y = height - 50
-    c.setFont("Helvetica-Bold", 16)
-    c.setFillColorRGB(0.115, 0.455, 0.961)  # #1D74F5
-    c.drawString(50, y, "Knowledge Export")
-    c.setFillColorRGB(0, 0, 0)
-    y -= 24
-
-    for it in req.items:
-        if y < 100:
-            c.showPage()
-            y = height - 50
-        c.setFont("Helvetica-Bold", 12)
-        y = write_line(str(it.get("summary", "—")), 50, y)
-        y -= 14
-        meta = f"Project: {it.get('project','—')} | Source: {it.get('source','—')} | Date: {it.get('date','—')}"
-        c.setFont("Helvetica", 10)
-        y = write_line(meta, 50, y)
-        y -= 10
-        topics = it.get("topics") or []
-        if topics:
-            y = write_line("Topics: " + ", ".join(map(str, topics)), 50, y)
-            y -= 12
-        decisions = it.get("decisions") or []
-        if decisions:
-            y = write_line("Decisions:", 50, y)
-            y -= 12
-            for d in decisions:
-                y = write_line(f"• {d}", 60, y)
-                y -= 12
-        faqs = it.get("faqs") or []
-        if faqs:
-            y = write_line("FAQs:", 50, y)
-            y -= 12
-            for f in faqs:
-                y = write_line(f"• {f}", 60, y)
-                y -= 12
-        raw_text = it.get("raw_text")
-        if raw_text:
-            y = write_line("Original Content:", 50, y)
-            y -= 12
-            for line in str(raw_text).splitlines():
-                if y < 80:
-                    c.showPage()
-                    y = height - 50
-                y = write_line(line[:110], 60, y)
-                y -= 12
-        y -= 16
-
-    c.save()
-    pdf_data = buffer.getvalue()
-    buffer.close()
+    
+    # PDF format
+    pdf_data = to_pdf(request.items)
+    filename = (
+        request.filename
+        if request.filename.endswith(".pdf")
+        else f"{request.filename}.pdf"
+    )
     return {
-        "filename": req.filename if req.filename.endswith(".pdf") else f"{req.filename}.pdf",
+        "filename": filename,
         "mime": "application/pdf",
         "body_b64": pdf_data.hex(),
     }
 
 
 # ============================================================================
-# Public Signup Endpoint (No confirmation required)
+# Public Signup Endpoint
 # ============================================================================
 
 @app.post("/api/auth/signup")
-async def signup(req: SignUpRequest):
-    """Create a new user account with email already confirmed (no confirmation needed)"""
-    if not supabase_admin:
-        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
+async def signup(request: SignUpRequest):
+    """
+    Create a new user account with email already confirmed.
+    
+    Args:
+        request: Signup request with email, password, and full name
+        
+    Returns:
+        Created user information
+    """
+    supabase = get_supabase_admin()
     
     try:
         # Create user with email already confirmed using admin API
-        # This bypasses email confirmation requirement
-        response = supabase_admin.auth.admin.create_user({
-            "email": req.email,
-            "password": req.password,
-            "email_confirm": True,  # Email is already confirmed, no confirmation needed
+        response = supabase.auth.admin.create_user({
+            "email": request.email,
+            "password": request.password,
+            "email_confirm": True,  # Bypass email confirmation
             "user_metadata": {
-                "full_name": req.full_name,
+                "full_name": request.full_name,
                 "role": "team_member",  # Default role for new signups
             }
         })
@@ -219,7 +182,7 @@ async def signup(req: SignUpRequest):
             "user": {
                 "id": response.user.id,
                 "email": response.user.email,
-                "full_name": req.full_name,
+                "full_name": request.full_name,
                 "email_confirmed_at": response.user.email_confirmed_at,
             },
             "message": "Account created successfully. You can now sign in."
@@ -227,127 +190,142 @@ async def signup(req: SignUpRequest):
     except Exception as e:
         error_msg = str(e)
         if "already registered" in error_msg.lower() or "already exists" in error_msg.lower():
-            raise HTTPException(status_code=400, detail="An account with this email already exists. Please sign in instead.")
-        raise HTTPException(status_code=400, detail=f"Failed to create account: {error_msg}")
+            raise HTTPException(
+                status_code=400,
+                detail="An account with this email already exists. Please sign in instead."
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to create account: {error_msg}"
+        )
 
 
 # ============================================================================
 # User Management Endpoints (Admin Only)
 # ============================================================================
 
+async def get_current_admin(authorization: Optional[str] = Header(None)):
+    """Dependency to get current admin user."""
+    return await verify_admin(authorization, supabase_admin)
+
+
 @app.get("/api/admin/users")
-async def list_users(current_user=Depends(verify_admin)):
-    """List all users (Admin only)"""
-    if not supabase_admin:
-        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
-    
+async def list_users(
+    current_user=Depends(get_current_admin),
+    service: UserService = Depends(get_user_service)
+):
+    """List all users (Admin only)."""
     try:
-        # list_users() returns a list directly, not an object with .users
-        response = supabase_admin.auth.admin.list_users()
-        users = []
-        
-        # Handle both list response and object with .users attribute
-        user_list = response if isinstance(response, list) else getattr(response, 'users', response)
-        
-        for user in user_list:
-            # Handle both dict-like and object-like user objects
-            user_id = user.id if hasattr(user, 'id') else user.get('id')
-            user_email = user.email if hasattr(user, 'email') else user.get('email')
-            user_metadata = user.user_metadata if hasattr(user, 'user_metadata') else user.get('user_metadata', {})
-            user_created_at = user.created_at if hasattr(user, 'created_at') else user.get('created_at')
-            
-            role = user_metadata.get("role", "team_member") if isinstance(user_metadata, dict) else getattr(user_metadata, 'get', lambda k, d: d)("role", "team_member")
-            full_name = user_metadata.get("full_name") if isinstance(user_metadata, dict) else getattr(user_metadata, 'get', lambda k: None)("full_name")
-            
-            users.append({
-                "id": user_id,
-                "email": user_email,
-                "full_name": full_name,
-                "role": role,
-                "created_at": user_created_at,
-            })
+        users = service.list_users()
         return {"users": users}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list users: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list users: {str(e)}"
+        )
 
 
 @app.post("/api/admin/users")
-async def create_user(req: CreateUserRequest, current_user=Depends(verify_admin)):
-    """Create a new user (Admin only)"""
-    if not supabase_admin:
-        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
-    
-    if req.role not in ["admin", "project_lead", "team_member"]:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be: admin, project_lead, or team_member")
-    
+async def create_user(
+    request: CreateUserRequest,
+    current_user=Depends(get_current_admin),
+    service: UserService = Depends(get_user_service)
+):
+    """Create a new user (Admin only)."""
     try:
-        response = supabase_admin.auth.admin.create_user({
-            "email": req.email,
-            "password": req.password,
-            "email_confirm": True,
-            "user_metadata": {
-                "full_name": req.full_name,
-                "role": req.role,
-            }
-        })
-        
-        return {
-            "id": response.user.id,
-            "email": response.user.email,
-            "full_name": req.full_name,
-            "role": req.role,
-            "created_at": response.user.created_at,
-        }
+        return service.create_user(
+            email=request.email,
+            password=request.password,
+            full_name=request.full_name,
+            role=request.role
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to create user: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to create user: {str(e)}"
+        )
 
 
 @app.delete("/api/admin/users/{user_id}")
-async def delete_user(user_id: str, current_user=Depends(verify_admin)):
-    """Delete a user (Admin only)"""
-    if not supabase_admin:
-        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
-    
+async def delete_user(
+    user_id: str,
+    current_user=Depends(get_current_admin),
+    service: UserService = Depends(get_user_service)
+):
+    """Delete a user (Admin only)."""
     try:
-        supabase_admin.auth.admin.delete_user(user_id)
+        service.delete_user(user_id)
         return {"success": True, "message": "User deleted successfully"}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to delete user: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to delete user: {str(e)}"
+        )
 
 
 @app.patch("/api/admin/users/{user_id}/role")
-async def update_user_role(user_id: str, req: UpdateUserRoleRequest, current_user=Depends(verify_admin)):
-    """Update user role (Admin only)"""
-    if not supabase_admin:
-        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
+async def update_user_role(
+    user_id: str,
+    request: UpdateUserRoleRequest,
+    current_user=Depends(get_current_admin),
+    service: UserService = Depends(get_user_service)
+):
+    """Update user role (Admin only)."""
+    try:
+        return service.update_user_role(user_id, request.role)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to update user role: {str(e)}"
+        )
+
+
+# ============================================================================
+# AI Assistant Endpoints
+# ============================================================================
+
+@app.post("/api/ai/ask")
+async def ask_ai_question(
+    request: AIQuestionRequest,
+    supabase: Client = Depends(get_supabase_admin)
+):
+    """
+    Answer a user's question using AI and relevant articles from the knowledge base.
     
-    if req.role not in ["admin", "project_lead", "team_member"]:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be: admin, project_lead, or team_member")
+    Args:
+        request: Question request with user's question
+        supabase: Supabase admin client
+        
+    Returns:
+        AI-generated answer with relevant article links
+    """
+    if not request.question or not request.question.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Question cannot be empty"
+        )
     
     try:
-        # Get current user to preserve existing metadata
-        user_response = supabase_admin.auth.admin.get_user_by_id(user_id)
-        current_metadata = user_response.user.user_metadata or {}
-        
-        # Update role while preserving other metadata
-        current_metadata["role"] = req.role
-        
-        response = supabase_admin.auth.admin.update_user_by_id(
-            user_id,
-            {"user_metadata": current_metadata}
-        )
-        
-        return {
-            "id": response.user.id,
-            "email": response.user.email,
-            "role": req.role,
-        }
+        result = process_ai_question(supabase, request.question.strip())
+        return result
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to update user role: {str(e)}")
+        logger.error(f"Error processing AI question: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process question: {str(e)}"
+        )
 
+
+# ============================================================================
+# Application Entry Point
+# ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 

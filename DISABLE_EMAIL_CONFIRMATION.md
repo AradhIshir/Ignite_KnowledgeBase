@@ -40,3 +40,5 @@ This guide will help you disable email confirmation so users can sign in immedia
 - Existing unconfirmed users will still need to be manually confirmed or can sign up again
 - You can manually confirm existing users in Supabase Dashboard → Authentication → Users
 
+
+

@@ -343,7 +343,9 @@ export default function NewArticle() {
           </HeaderLeft>
           <HeaderRight>
             <ActionButton href="/app/dashboard">🏠 Dashboard</ActionButton>
+            {/* PAUSED: All Articles button - commented out
             <ActionButton href="/app/items">📖 All Articles</ActionButton>
+            */}
           </HeaderRight>
         </Header>
 

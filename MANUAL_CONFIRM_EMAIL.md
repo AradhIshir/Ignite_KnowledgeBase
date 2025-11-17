@@ -33,3 +33,5 @@ WHERE email = 'aradh5@yopmail.com';
 
 This will manually confirm the email without needing the confirmation link.
 
+
+

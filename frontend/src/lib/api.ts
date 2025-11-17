@@ -322,3 +322,59 @@ export async function updateUserRole(userId: string, role: 'admin' | 'project_le
   }
 }
 
+// ============================================================================
+// AI Assistant API
+// ============================================================================
+
+export async function askAIQuestion(question: string) {
+  const backend = process.env.NEXT_PUBLIC_BACKEND_URL;
+  if (!backend) {
+    throw new Error('Backend URL is not configured. Please check your environment variables.');
+  }
+  
+  // Create an AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout (increased for OpenAI processing)
+  
+  try {
+    const res = await fetch(`${backend}/api/ai/ask`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ question }),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      
+      if (res.status === 400) {
+        throw new Error(error.detail || 'Invalid question. Please provide a valid question.');
+      } else if (res.status === 500) {
+        throw new Error('Server error. Please check if the backend is running and OpenAI API key is configured.');
+      }
+      
+      throw new Error(error.detail || `Failed to get AI response (${res.status})`);
+    }
+    
+    return await res.json();
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. The AI response is taking too long. Please try again with a simpler question.');
+    }
+    
+    if (err.message.includes('Backend URL')) {
+      throw err;
+    }
+    if (err.name === 'TypeError' && err.message.includes('fetch')) {
+      throw new Error('Cannot connect to backend server. Please ensure the backend is running on port 8080.');
+    }
+    throw err;
+  }
+}
+

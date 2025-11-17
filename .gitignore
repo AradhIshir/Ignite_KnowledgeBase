@@ -120,3 +120,8 @@ poetry.lock
 # Supabase
 supabase/.branches
 supabase/.temp
+slack-extractor.env
+*.env
+.env
+.env.local
+slack-extractor.env

@@ -103,6 +103,16 @@ const NoComments = styled.p`
   margin: 16px 0;
 `;
 
+const ErrorMessage = styled.div`
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: #DC2626;
+  font-size: 0.875rem;
+  margin-bottom: 16px;
+`;
+
 interface Comment {
   id: string;
   comment_text: string;
@@ -193,7 +203,24 @@ export default function Comments({ articleId }: CommentsProps) {
       setComments(commentsWithUsers);
     } catch (err: any) {
       console.error('Error fetching comments:', err);
-      setError(err.message);
+      let errorMessage = 'Failed to load comments. Please try again.';
+      
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.error) {
+        errorMessage = err.error;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      }
+      
+      // Provide more specific error messages
+      if (errorMessage.includes('permission') || errorMessage.includes('policy')) {
+        errorMessage = 'You do not have permission to view comments.';
+      } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -226,7 +253,26 @@ export default function Comments({ articleId }: CommentsProps) {
       await fetchComments();
     } catch (err: any) {
       console.error('Error submitting comment:', err);
-      setError(err.message || 'Failed to add comment');
+      let errorMessage = 'Failed to add comment. Please try again.';
+      
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.error) {
+        errorMessage = err.error;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      }
+      
+      // Provide more specific error messages
+      if (errorMessage.includes('permission') || errorMessage.includes('role') || errorMessage.includes('policy')) {
+        errorMessage = 'You do not have permission to add comments. Only Admins and Project Leads can comment.';
+      } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      } else if (errorMessage.includes('authentication') || errorMessage.includes('login')) {
+        errorMessage = 'You must be logged in to add comments. Please log in and try again.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -245,7 +291,7 @@ export default function Comments({ articleId }: CommentsProps) {
     <CommentsContainer>
       <CommentsTitle>Comments ({comments.length})</CommentsTitle>
       
-      {error && <div style={{ color: '#D92D20', marginBottom: '16px' }}>{error}</div>}
+      {error && <ErrorMessage>{error}</ErrorMessage>}
 
       {comments.length === 0 ? (
         <NoComments>No comments yet. Be the first to comment!</NoComments>

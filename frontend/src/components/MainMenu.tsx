@@ -156,6 +156,9 @@ export default function MainMenu() {
     if (path === '/app/items') {
       return router.pathname.startsWith('/app/items');
     }
+    if (path === '/app/ai-assistant') {
+      return router.pathname === '/app/ai-assistant';
+    }
     return router.pathname === path;
   };
 
@@ -182,12 +185,14 @@ export default function MainMenu() {
         <NavLink href="/app/dashboard" $active={isActive('/app/dashboard')}>
           🏠 Home
         </NavLink>
-        <NavLink href="/app/dashboard" $active={false}>
+        <NavLink href="/app/ai-assistant" $active={router.pathname === '/app/ai-assistant'}>
           🤖 AI Assistant
         </NavLink>
+        {/* PAUSED: Knowledge Items tab - commented out for manual control
         <NavLink href="/app/items" $active={isActive('/app/items')}>
           📖 Knowledge Items
         </NavLink>
+        */}
         {canCreate && (
           <NavLink href="/app/items/new" $active={false}>
             ➕ Add Article

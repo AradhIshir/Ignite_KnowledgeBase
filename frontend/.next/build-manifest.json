@@ -22,10 +22,20 @@
       "static/chunks/main.js",
       "static/chunks/pages/_error.js"
     ],
+    "/app/ai-assistant": [
+      "static/chunks/webpack.js",
+      "static/chunks/main.js",
+      "static/chunks/pages/app/ai-assistant.js"
+    ],
     "/app/dashboard": [
       "static/chunks/webpack.js",
       "static/chunks/main.js",
       "static/chunks/pages/app/dashboard.js"
+    ],
+    "/app/items/[id]": [
+      "static/chunks/webpack.js",
+      "static/chunks/main.js",
+      "static/chunks/pages/app/items/[id].js"
     ]
   },
   "ampFirstPages": []
