@@ -866,14 +866,27 @@ class SlackKnowledgeExtractor:
     def _fetch_thread_replies(
         self,
         channel_id: str,
-        thread_ts: str
+        thread_ts: str,
+        include_parent: bool = False
     ) -> List[Dict[str, Any]]:
-        """Fetch all replies to a thread (excluding the parent message)."""
+        """
+        Fetch all replies to a thread.
+        
+        Args:
+            channel_id: Slack channel ID
+            thread_ts: Thread timestamp
+            include_parent: If True, include the parent message; if False, only replies
+            
+        Returns:
+            List of thread messages (replies only by default)
+        """
         try:
             params = {'channel': channel_id, 'ts': thread_ts}
             data = self.slack_client.call_api('conversations.replies', params)
             messages = data.get('messages', [])
             # First message is the parent, rest are replies
+            if include_parent:
+                return messages
             return messages[1:] if len(messages) > 1 else []
         except Exception as e:
             logger.warning(f"Failed to fetch thread replies for {thread_ts}: {e}")
@@ -883,6 +896,7 @@ class SlackKnowledgeExtractor:
         """Fetch all Slack messages from selected channels within time window."""
         logger.info(f"Fetching Slack messages for last {self.hours_back} hours...")
         oldest_ts = str(int((datetime.now() - timedelta(hours=self.hours_back)).timestamp()))
+        oldest_datetime = datetime.now() - timedelta(hours=self.hours_back)
         messages = []
         
         selected_channels = self._select_channels()
@@ -891,6 +905,7 @@ class SlackKnowledgeExtractor:
             return messages
         
         processed_timestamps: Set[str] = set()
+        threads_to_fetch: Set[str] = set()  # Track thread timestamps to fetch
         
         for channel_id, channel_name in selected_channels:
             logger.info(f"Fetching messages from channel: {channel_name}")
@@ -900,9 +915,6 @@ class SlackKnowledgeExtractor:
             except Exception as e:
                 logger.error(f"Failed to fetch history for #{channel_name}: {e}")
                 continue
-            
-            # Track original messages that have threads
-            threads_to_fetch = {}
             
             # Process messages from history
             for msg in history:
@@ -915,33 +927,81 @@ class SlackKnowledgeExtractor:
                     continue
                 processed_timestamps.add(slack_msg.timestamp)
                 
-                # Track threads for later fetching
-                if not slack_msg.is_thread_reply:
+                # If this is a thread reply, track the thread to fetch all replies
+                if slack_msg.is_thread_reply and slack_msg.original_thread_ts:
+                    threads_to_fetch.add(slack_msg.original_thread_ts)
+                # If this is an original message with replies, also track it
+                elif not slack_msg.is_thread_reply:
                     reply_count = msg.get('reply_count', 0)
                     if reply_count > 0:
-                        threads_to_fetch[slack_msg.timestamp] = msg
+                        threads_to_fetch.add(slack_msg.timestamp)
                 
                 messages.append(slack_msg)
             
-            # Fetch and process thread replies
-            for original_ts, original_msg in threads_to_fetch.items():
+            # Fetch and process thread replies for all tracked threads
+            # This includes both threads with recent original messages AND threads with recent replies
+            for thread_ts in threads_to_fetch:
                 try:
-                    replies = self._fetch_thread_replies(channel_id, original_ts)
-                    logger.info(f"Found {len(replies)} replies for thread {original_ts}")
+                    # Fetch all replies in the thread
+                    all_replies = self._fetch_thread_replies(channel_id, thread_ts)
+                    logger.info(f"Found {len(all_replies)} replies for thread {thread_ts}")
                     
-                    for reply in replies:
-                        reply_msg = self.message_processor.process_thread_reply(
-                            reply,
-                            channel_name,
-                            original_ts
-                        )
-                        if not reply_msg or reply_msg.timestamp in processed_timestamps:
-                            continue
+                    # Filter replies to only include those within the time window
+                    recent_replies = []
+                    for reply in all_replies:
+                        reply_ts = float(reply.get('ts', 0))
+                        reply_datetime = datetime.fromtimestamp(reply_ts)
+                        if reply_datetime >= oldest_datetime:
+                            recent_replies.append(reply)
+                    
+                    if recent_replies:
+                        logger.info(f"Found {len(recent_replies)} recent replies (within time window) for thread {thread_ts}")
                         
-                        processed_timestamps.add(reply_msg.timestamp)
-                        messages.append(reply_msg)
+                        # When we have recent replies, fetch ALL thread messages (including parent) for full context
+                        # This ensures we have complete thread context for AI summarization
+                        all_thread_messages = self._fetch_thread_replies(channel_id, thread_ts, include_parent=True)
+                        
+                        # Add ALL thread messages (old + new) for context
+                        # Old messages won't be added to articles (deduplication handles this)
+                        for thread_msg in all_thread_messages:
+                            # Check if this is the parent message or a reply
+                            if thread_msg.get('ts') == thread_ts:
+                                # This is the parent message - process it as a regular message
+                                parent_msg = self.message_processor.process_message(thread_msg, channel_name)
+                                if parent_msg and parent_msg.timestamp not in processed_timestamps:
+                                    processed_timestamps.add(parent_msg.timestamp)
+                                    messages.append(parent_msg)
+                            else:
+                                # This is a reply
+                                reply_msg = self.message_processor.process_thread_reply(
+                                    thread_msg,
+                                    channel_name,
+                                    thread_ts
+                                )
+                                if not reply_msg:
+                                    continue
+                                
+                                # Only add if not already processed (deduplication)
+                                if reply_msg.timestamp not in processed_timestamps:
+                                    processed_timestamps.add(reply_msg.timestamp)
+                                    messages.append(reply_msg)
+                    else:
+                        # No recent replies, but thread was tracked (has replies)
+                        # Only add recent replies if any exist
+                        for reply in all_replies:
+                            reply_ts = float(reply.get('ts', 0))
+                            reply_datetime = datetime.fromtimestamp(reply_ts)
+                            if reply_datetime >= oldest_datetime:
+                                reply_msg = self.message_processor.process_thread_reply(
+                                    reply,
+                                    channel_name,
+                                    thread_ts
+                                )
+                                if reply_msg and reply_msg.timestamp not in processed_timestamps:
+                                    processed_timestamps.add(reply_msg.timestamp)
+                                    messages.append(reply_msg)
                 except Exception as e:
-                    logger.warning(f"Error fetching thread replies for {original_ts}: {e}")
+                    logger.warning(f"Error fetching thread replies for {thread_ts}: {e}")
         
         logger.info(f"Fetched {len(messages)} messages from Slack")
         return messages
@@ -1118,11 +1178,9 @@ class SlackKnowledgeExtractor:
                 thread_messages = thread_groups.get(thread_id, [msg])
                 
                 # Process this message with its thread context
-                # Only process once per thread-keyword combination
-                thread_key = f"{thread_id}:{best_match}"
-                if thread_key in processed_threads:
-                    continue
-                processed_threads.add(thread_key)
+                # Note: We process each message individually - deduplication happens at message level
+                # (checking if message content hash exists in article), not at thread-keyword level
+                # This allows new replies in old threads to be added to existing articles
                 
                 success, action = self._process_matched_message(best_match, msg, thread_messages)
                 

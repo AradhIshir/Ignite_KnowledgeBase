@@ -9,13 +9,76 @@ from app.utils.ai_summarization import call_openai_api
 logger = logging.getLogger(__name__)
 
 
+def extract_keywords_with_openai(question: str) -> List[str]:
+    """
+    Use OpenAI API to extract the most relevant keywords from a user's question.
+    
+    Args:
+        question: User's question
+        
+    Returns:
+        List of extracted keywords
+    """
+    try:
+        logger.info(f"Extracting keywords from question using OpenAI: {question[:50]}...")
+        
+        # Create prompt for keyword extraction
+        prompt = f"Extract the most relevant keywords from this question: '{question}'\n\nReturn only the keywords as a comma-separated list, without any explanation or additional text."
+        
+        system_message = (
+            "You are a keyword extraction assistant. "
+            "Extract the most important and searchable keywords from user questions. "
+            "Return only the keywords separated by commas, no explanations."
+        )
+        
+        # Call OpenAI API
+        response = call_openai_api(
+            prompt=prompt,
+            system_message=system_message,
+            model='gpt-4o-mini',
+            temperature=0.1,  # Low temperature for consistent keyword extraction
+            max_tokens=50,  # Keywords should be short
+            timeout=30
+        )
+        
+        if not response:
+            logger.warning("OpenAI keyword extraction returned None, falling back to simple extraction")
+            # Fallback: simple keyword extraction
+            question_lower = question.lower()
+            stop_words = {'what', 'is', 'the', 'of', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'with', 'about', 'tell', 'me', 'show', 'status', 'latest', 'updates', 'information'}
+            question_words = [word.strip() for word in question_lower.split() if word.strip() and word not in stop_words]
+            keywords = [word for word in question_words if len(word) > 2]
+            return keywords if keywords else [word.strip() for word in question_lower.split() if len(word.strip()) > 2]
+        
+        # Parse keywords from response (comma-separated)
+        keywords = [kw.strip() for kw in response.split(',') if kw.strip()]
+        logger.info(f"OpenAI extracted keywords: {keywords}")
+        
+        return keywords
+        
+    except Exception as e:
+        logger.error(f"Error extracting keywords with OpenAI: {str(e)}", exc_info=True)
+        # Fallback: simple keyword extraction
+        question_lower = question.lower()
+        stop_words = {'what', 'is', 'the', 'of', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'with', 'about', 'tell', 'me', 'show', 'status', 'latest', 'updates', 'information'}
+        question_words = [word.strip() for word in question_lower.split() if word.strip() and word not in stop_words]
+        keywords = [word for word in question_words if len(word) > 2]
+        return keywords if keywords else [word.strip() for word in question_lower.split() if len(word.strip()) > 2]
+
+
 def search_relevant_articles(
     supabase: Client,
     question: str,
     limit: int = 5
 ) -> List[Dict[str, Any]]:
     """
-    Search for articles relevant to the user's question.
+    Search for articles relevant to the user's question using OpenAI-extracted keywords
+    and Supabase ILIKE queries.
+    
+    Workflow:
+    1. Extract keywords from question using OpenAI API
+    2. Query Supabase using ILIKE '%keyword%' matching on titles (summary) and summaries
+    3. Return matching articles
     
     Args:
         supabase: Supabase client instance
@@ -28,77 +91,60 @@ def search_relevant_articles(
     try:
         logger.info(f"Searching articles for question: {question[:50]}...")
         
-        # Extract potential keywords from the question (remove common stop words)
-        question_lower = question.lower()
-        stop_words = {'what', 'is', 'the', 'of', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'with', 'about', 'tell', 'me', 'show', 'status', 'latest', 'updates', 'information'}
-        question_words = [word.strip() for word in question_lower.split() if word.strip() and word not in stop_words]
-        keywords = [word for word in question_words if len(word) > 2]  # Lower threshold to 2
+        # Step 1: Extract keywords using OpenAI
+        keywords = extract_keywords_with_openai(question)
         
-        # If no keywords after filtering, use all words longer than 2 chars
         if not keywords:
-            keywords = [word.strip() for word in question_lower.split() if len(word.strip()) > 2]
+            logger.warning("No keywords extracted, returning empty results")
+            return []
         
-        logger.info(f"Extracted keywords: {keywords}")
+        logger.info(f"Searching with keywords: {keywords}")
         
-        # Get more articles to search through (increase limit significantly)
-        query = supabase.table('knowledge_items').select(
-            'id, summary, topics, key_points, raw_text, source, created_at'
-        ).order('created_at', desc=True).limit(50)  # Get more articles to search
+        # Step 2: Query Supabase using ILIKE matching for each keyword
+        # We'll search in both 'summary' (which serves as title) and 'raw_text' (which contains content)
+        # Note: Supabase PostgREST doesn't support OR conditions directly in filters,
+        # so we'll query for each keyword and combine results
         
-        # Execute query
-        logger.debug("Executing Supabase query...")
-        response = query.execute()
-        articles = response.data if response.data else []
-        logger.info(f"Found {len(articles)} articles from database")
+        all_matching_articles = {}
         
-        # Score and filter articles based on relevance
-        scored_articles = []
-        for article in articles:
-            score = 0
-            summary = (article.get('summary') or '').lower()
-            topics = article.get('topics') or []
-            key_points = article.get('key_points') or []
-            
-            # Check if any keyword appears in summary
-            for keyword in keywords:
-                if keyword in summary:
-                    score += 2
-                # Check if keyword appears in topics
-                if topics:
-                    if isinstance(topics, list):
-                        if any(keyword in str(topic).lower() for topic in topics):
-                            score += 3
-                    elif isinstance(topics, str):
-                        if keyword in topics.lower():
-                            score += 3
-                # Check if keyword appears in key_points
-                if key_points:
-                    if isinstance(key_points, list):
-                        if any(keyword in str(point).lower() for point in key_points):
-                            score += 2
-                    elif isinstance(key_points, str):
-                        if keyword in key_points.lower():
-                            score += 2
-            
-            # Also check if question words appear in summary
-            question_words = set(question_lower.split())
-            summary_words = set(summary.split())
-            common_words = question_words.intersection(summary_words)
-            if len(common_words) > 0:
-                score += len(common_words)
-            
-            if score > 0:
-                scored_articles.append((score, article))
+        for keyword in keywords:
+            try:
+                # Search in summary (title) field with case-insensitive matching
+                query_summary = supabase.table('knowledge_items').select(
+                    'id, summary, topics, key_points, raw_text, source, created_at'
+                ).ilike('summary', f'%{keyword}%')
+                
+                response_summary = query_summary.execute()
+                if response_summary.data:
+                    for article in response_summary.data:
+                        article_id = article.get('id')
+                        if article_id not in all_matching_articles:
+                            all_matching_articles[article_id] = article
+                
+                # Also search in raw_text (content) field with case-insensitive matching
+                query_raw_text = supabase.table('knowledge_items').select(
+                    'id, summary, topics, key_points, raw_text, source, created_at'
+                ).ilike('raw_text', f'%{keyword}%')
+                
+                response_raw_text = query_raw_text.execute()
+                if response_raw_text.data:
+                    for article in response_raw_text.data:
+                        article_id = article.get('id')
+                        if article_id not in all_matching_articles:
+                            all_matching_articles[article_id] = article
+                            
+            except Exception as e:
+                logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
+                continue
         
-        # Sort by score (descending) and return top results
-        scored_articles.sort(key=lambda x: x[0], reverse=True)
-        result = [article for _, article in scored_articles[:limit]]
-        logger.info(f"Returning {len(result)} relevant articles (from {len(scored_articles)} scored articles)")
+        # Convert dictionary values to list
+        articles = list(all_matching_articles.values())
         
-        # Log top scores for debugging
-        if scored_articles:
-            top_scores = [score for score, _ in scored_articles[:5]]
-            logger.info(f"Top 5 scores: {top_scores}")
+        # Sort by created_at (most recent first) and limit results
+        articles.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        result = articles[:limit]
+        
+        logger.info(f"Found {len(result)} matching articles (from {len(articles)} total matches)")
         
         return result
         

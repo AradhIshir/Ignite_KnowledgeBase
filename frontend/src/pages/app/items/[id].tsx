@@ -711,7 +711,6 @@ export default function ArticleDetails() {
             <p>{error || 'The article you are looking for does not exist.'}</p>
             <ButtonGroup style={{ marginTop: '24px' }}>
               <Button href="/app/dashboard">← Back to Dashboard</Button>
-              <Button href="/app/items">View All Articles</Button>
             </ButtonGroup>
           </ErrorState>
         </Container>
@@ -1049,10 +1048,12 @@ export default function ArticleDetails() {
   const formattedSummary = shouldShowSummary ? formatSummaryForDisplay(article.summary, isConfluence) : '';
   
   // Check if we have key points or action items to display
-  // For Confluence articles, if the summary already contains "Key Points", don't show them separately
-  const summaryHasKeyPoints = isConfluence && formattedSummary && formattedSummary.includes('Key Points');
+  // If the summary already contains "Key Points" or "Action Items", don't show them separately
+  // This applies to both Confluence and Slack articles (Slack AI summaries include these sections)
+  const summaryHasKeyPoints = formattedSummary && formattedSummary.includes('Key Points');
+  const summaryHasActionItems = formattedSummary && formattedSummary.includes('Action Items');
   const hasKeyPoints = !summaryHasKeyPoints && article?.key_points && Array.isArray(article.key_points) && article.key_points.length > 0;
-  const hasActionItems = article?.action_items && Array.isArray(article.action_items) && article.action_items.length > 0;
+  const hasActionItems = !summaryHasActionItems && article?.action_items && Array.isArray(article.action_items) && article.action_items.length > 0;
   const hasSummaryContent = formattedSummary || hasKeyPoints || hasActionItems;
   
   // Debug logging (remove in production)
@@ -1077,7 +1078,6 @@ export default function ArticleDetails() {
         <Title>{getPageTitle()}</Title>
         <ButtonGroup>
           <Button href="/app/dashboard">🏠 Dashboard</Button>
-          <Button href="/app/items">📖 All Articles</Button>
         </ButtonGroup>
       </Header>
 

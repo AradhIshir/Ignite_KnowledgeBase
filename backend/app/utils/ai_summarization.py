@@ -4,7 +4,7 @@ import json
 import re
 import logging
 from typing import Dict, Any, Optional, List
-import requests
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -54,31 +54,31 @@ def call_openai_api(
             'max_tokens': max_tokens
         }
         
-        response = requests.post(
-            'https://api.openai.com/v1/chat/completions',
-            headers=headers,
-            json=payload,
-            timeout=timeout
-        )
+        with httpx.Client(timeout=timeout) as client:
+            response = client.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers=headers,
+                json=payload
+            )
+            
+            if response.status_code != 200:
+                error_detail = response.text
+                logger.error(f"OpenAI API error: {response.status_code} - {error_detail}")
+                # Log more details for debugging
+                if response.status_code == 401:
+                    logger.error("OpenAI API authentication failed - check your API key")
+                elif response.status_code == 429:
+                    logger.error("OpenAI API rate limit exceeded")
+                return None
+            
+            result = response.json()
+            content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+            return content if content else None
         
-        if response.status_code != 200:
-            error_detail = response.text
-            logger.error(f"OpenAI API error: {response.status_code} - {error_detail}")
-            # Log more details for debugging
-            if response.status_code == 401:
-                logger.error("OpenAI API authentication failed - check your API key")
-            elif response.status_code == 429:
-                logger.error("OpenAI API rate limit exceeded")
-            return None
-        
-        result = response.json()
-        content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
-        return content if content else None
-        
-    except requests.exceptions.Timeout:
+    except httpx.TimeoutException:
         logger.error("OpenAI API request timed out")
         return None
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e:
         logger.error(f"OpenAI API request error: {str(e)}")
         return None
     except Exception as e:

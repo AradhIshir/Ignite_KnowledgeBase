@@ -45,6 +45,97 @@ const stripHtmlTags = (html: string): string => {
   return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 };
 
+// Clean text for CSV export - removes all HTML/XML tags
+const cleanTextForCSV = (text: string): string => {
+  if (!text) return '';
+  
+  // Decode HTML entities first
+  let cleaned = decodeHtmlEntities(text);
+  
+  // Remove XML/HTML comments
+  cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, '');
+  
+  // Remove all XML/HTML tags (including Confluence-specific and malformed ones)
+  cleaned = cleaned.replace(/<[^>]+>/g, '');
+  
+  // Clean up multiple spaces and newlines
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  
+  // Remove any remaining HTML entities
+  cleaned = cleaned.replace(/&[a-z]+;/gi, '');
+  
+  return cleaned;
+};
+
+// Extract task body content from malformed XML tags
+const extractTaskBodyContent = (text: string): string => {
+  if (!text) return '';
+  
+  // Try to match task-body tags (including malformed variants)
+  const patterns = [
+    /<ac:task-body[^>]*>([\s\S]*?)<\/ac:task-body>/i,
+    /<ac:task-bod[^>]*>([\s\S]*?)<\/ac:task-bod[^>]*>/i,
+    /<ac:task-bod[^>]*>([\s\S]*?)<\/ac-tack-bodys>/i,
+    /<ac:task-bodusconan[^>]*>([\s\S]*?)<\/ac:task-bodusconan>/i,
+    /<ac-tack-bodys[^>]*>([\s\S]*?)<\/ac-tack-bodys>/i,
+  ];
+  
+  for (const pattern of patterns) {
+    const matches = text.match(pattern);
+    if (matches && matches[1]) {
+      return cleanTextForCSV(matches[1]);
+    }
+  }
+  
+  // If no task-body tag found, just clean the text
+  return cleanTextForCSV(text);
+};
+
+// Extract clean title from summary
+const extractTitle = (summary: string, maxLength: number = 100): string => {
+  if (!summary) return '';
+  
+  // Clean the summary first
+  let cleaned = cleanTextForCSV(summary);
+  
+  if (!cleaned) return '';
+  
+  // Try to extract first sentence (ending with . ! ?)
+  const sentenceMatch = cleaned.match(/^([^.!?]+[.!?])/);
+  if (sentenceMatch) {
+    const title = sentenceMatch[1].trim();
+    if (title.length <= maxLength) {
+      return title;
+    }
+  }
+  
+  // If no sentence ending found, use first N characters
+  if (cleaned.length > maxLength) {
+    const truncated = cleaned.substring(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(' ');
+    if (lastSpace > maxLength * 0.7) {
+      return truncated.substring(0, lastSpace).trim() + '...';
+    }
+    return truncated.trim() + '...';
+  }
+  
+  return cleaned;
+};
+
+// Clean summary for CSV - handles task body extraction
+const cleanSummaryForCSV = (rawText: string): string => {
+  if (!rawText) return '';
+  
+  // First try to extract task body content (handles malformed tags)
+  const taskContent = extractTaskBodyContent(rawText);
+  if (taskContent) {
+    return taskContent;
+  }
+  
+  // Otherwise just clean all tags
+  return cleanTextForCSV(rawText);
+};
+
 // Header Components
 const Header = styled.header`
   background: white;
@@ -160,6 +251,7 @@ const TitleGreen = styled.span`
 const Tagline = styled.p`
   color: #6B7280;
   font-size: 16px;
+  font-weight: bold;
   margin: 0 0 32px 0;
 `;
 
@@ -265,8 +357,24 @@ const SummaryIcon = styled.div`
   position: absolute;
   top: 24px;
   right: 24px;
-  font-size: 32px;
-  opacity: 0.3;
+  font-size: 48px;
+  opacity: 1;
+  color: white;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  line-height: 1;
+  /* Add a subtle background circle for better contrast */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60px;
+    height: 60px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    z-index: -1;
+  }
 `;
 
 // Search and Filters
@@ -452,19 +560,47 @@ export default function Dashboard() {
   });
 
   const handleExportCSV = () => {
+    // Helper function to escape CSV cells properly
+    const escapeCSV = (cell: string): string => {
+      if (!cell) return '';
+      // Replace double quotes with two double quotes (CSV escaping)
+      const escaped = String(cell).replace(/"/g, '""');
+      // Wrap in quotes if cell contains comma, newline, or quote
+      if (escaped.includes(',') || escaped.includes('\n') || escaped.includes('"')) {
+        return `"${escaped}"`;
+      }
+      return escaped;
+    };
+
     const csvContent = [
       ['Title', 'Summary', 'Project', 'Topics', 'Date', 'Source'],
-      ...filteredItems.map(item => [
-        item.summary,
-        item.raw_text || '',
-        item.project || '',
-        (item.topics || []).join('; '),
-        item.date || '',
-        item.source || ''
-      ])
-    ].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+      ...filteredItems.map(item => {
+        // Clean Title: extract from summary, remove all tags
+        const title = extractTitle(item.summary || '');
+        
+        // Clean Summary: extract from raw_text, handle task bodies, remove all tags
+        const summary = cleanSummaryForCSV(item.raw_text || '');
+        
+        // Clean Project: remove any stray tags
+        const project = cleanTextForCSV(item.project || '');
+        
+        // Clean Topics: join array and remove any tags
+        const topics = (item.topics || [])
+          .map(topic => cleanTextForCSV(topic))
+          .filter(topic => topic.length > 0)
+          .join('; ');
+        
+        // Clean Date: remove any stray tags
+        const date = cleanTextForCSV(item.date || '');
+        
+        // Clean Source: remove any stray tags
+        const source = cleanTextForCSV(item.source || '');
+        
+        return [title, summary, project, topics, date, source];
+      })
+    ].map(row => row.map(escapeCSV).join(',')).join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -480,14 +616,11 @@ export default function Dashboard() {
         <Title>
           <TitleBlue>Knowledge</TitleBlue> <TitleGreen>Base</TitleGreen>
         </Title>
-        <Tagline>Explore and discover team insights</Tagline>
+        <Tagline>Organize, Perform, Succeed</Tagline>
 
         <ActionBar>
           <div></div>
           <ActionButtons>
-            <ViewToggle>
-              ☰ View
-            </ViewToggle>
             <ExportButton onClick={handleExportCSV}>
               📥 Export CSV
             </ExportButton>
@@ -604,13 +737,52 @@ export default function Dashboard() {
 
             // Get clean preview text (decode HTML entities and strip HTML for Confluence)
             const getPreviewText = () => {
-              if (item.source === 'confluence' && item.raw_text) {
-                // For Confluence, extract text from HTML
-                const text = stripHtmlTags(item.raw_text);
-                return decodeHtmlEntities(text).substring(0, 150) + (text.length > 150 ? '...' : '');
+              if (item.source === 'confluence') {
+                // Prefer using the summary field for Confluence cards
+                if (item.summary) {
+                  // Remove markdown headings like ## Summary
+                  const summaryText = item.summary
+                    .replace(/##\\s*Summary\\s*/gi, '')
+                    .split('\\n')
+                    .map(line => line.trim())
+                    .find(line => line.length > 0 && !line.startsWith('URL:'));
+                  
+                  if (summaryText) {
+                    const cleanedSummary = decodeHtmlEntities(stripHtmlTags(summaryText)).replace(/\\s+/g, ' ').trim();
+                    if (cleanedSummary) {
+                      return cleanedSummary.length > 140 ? `${cleanedSummary.substring(0, 140)}...` : cleanedSummary;
+                    }
+                  }
+                }
+
+                if (item.raw_text) {
+                  // Fallback: extract from raw HTML content
+                  let text = item.raw_text;
+                  
+                  // Remove URL line and metadata lines from the beginning
+                  const lines = text.split('\\n');
+                  const contentLines = lines.filter(line => {
+                    const trimmed = line.trim();
+                    return !trimmed.startsWith('URL:') && 
+                           !trimmed.startsWith('CONFLUENCE_PAGE_TITLE:') &&
+                           !trimmed.startsWith('CONFLUENCE_PAGE_ID:') &&
+                           !trimmed.startsWith('CONFLUENCE_VERSION:') &&
+                           !trimmed.startsWith('CONFLUENCE_VERSION_DATE:') &&
+                           trimmed.length > 0;
+                  });
+                  
+                  text = contentLines.join('\\n');
+                  text = stripHtmlTags(text);
+                  const cleaned = decodeHtmlEntities(text).replace(/\\s+/g, ' ').trim();
+                  if (cleaned) {
+                    return cleaned.substring(0, 140) + (cleaned.length > 140 ? '...' : '');
+                  }
+                }
               }
+              
               const summary = item.summary || item.raw_text?.substring(0, 100) || 'No description available';
-              return decodeHtmlEntities(summary);
+              const cleanedSummary = decodeHtmlEntities(stripHtmlTags(summary)).replace(/\\s+/g, ' ').trim();
+              return cleanedSummary.substring(0, 140) + (cleanedSummary.length > 140 ? '...' : '');
             };
 
             return (

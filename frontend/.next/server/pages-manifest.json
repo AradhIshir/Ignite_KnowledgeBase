@@ -2,7 +2,10 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/app/ai-assistant": "pages/app/ai-assistant.js",
   "/app/dashboard": "pages/app/dashboard.js",
+  "/app/items/new": "pages/app/items/new.js",
+  "/auth/signin": "pages/auth/signin.js",
+  "/auth/signup": "pages/auth/signup.js",
+  "/app/ai-assistant": "pages/app/ai-assistant.js",
   "/app/items/[id]": "pages/app/items/[id].js"
 }
